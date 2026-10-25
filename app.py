@@ -629,13 +629,14 @@ def maps_page():
     places, failed, picked = [], False, 0
     if q:
         try:
-            kind = nearby._category(q) if near else None
-            if kind:                                    # "pharmacy", "cafe": the closest ones of that kind
-                found = nearby.find(kind, None, near)[0]
+            parsed = nearby.parse(q) or ((nearby._category(q), None) if near and nearby._category(q) else None)
+            if parsed and (parsed[1] or near):          # "pharmacy near me", "cafe in bonn", or just "pharmacy" with a position
+                kind, where = parsed
+                found = nearby.find(kind, where, None if where else near)[0]
                 places = [{"name": p["name"], "where": p["address"] or p["town"] or "", "kind": p["kind"], "lat": p["lat"],
                            "lon": p["lon"], "zoom": 16, "km": (p["distance"] or 0) / 1000,
                            "osm": f"https://www.openstreetmap.org/?mlat={p['lat']:.5f}&mlon={p['lon']:.5f}#map=17/{p['lat']:.5f}/{p['lon']:.5f}"}
-                          for p in found[:6]]
+                          for p in found[:8]]
             if not places:                              # a name ("aldi"), or a place: the closest one by that name
                 places = (maps.search(q, wiki.lang_for(chosen_region()), near) if near
                           else maps.search(q, wiki.lang_for(chosen_region())))

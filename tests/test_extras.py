@@ -413,3 +413,16 @@ def test_maps_search_for_a_kind_of_place_uses_the_closest_ones(monkeypatch):
     monkeypatch.setattr(nook.maps, "search", lambda *a, **k: [])
     html = nook.app.test_client().get("/maps?q=pharmacy&near=50.73,7.10").get_data(as_text=True)
     assert "Apotheke Mitte" in html and "0.4 km" in html and "closest first" in html
+
+
+def test_maps_understands_the_same_near_me_questions_as_search(monkeypatch):
+    found = [{"name": "Eiscafe Venezia", "address": "Herzog-Georg-Strasse 75", "town": "Lauingen", "kind": "ice cream", "lat": 48.57,
+              "lon": 10.43, "distance": 4500.0}]
+    asked = []
+    monkeypatch.setattr(nook.nearby, "find", lambda category, where=None, ll=None: asked.append((category, where, ll)) or (found, ll, None))
+    monkeypatch.setattr(nook.maps, "search", lambda *a, **k: [])
+    client = nook.app.test_client()
+    html = client.get("/maps?q=ice+cream+near+me&near=48.57,10.43").get_data(as_text=True)
+    assert "Eiscafe Venezia" in html and "4.5 km" in html
+    client.get("/maps?q=cafe+in+bonn")
+    assert asked == [("ice cream", None, (48.57, 10.43)), ("cafe", "bonn", None)]

@@ -8,7 +8,9 @@
     <p class="back"><a href="/">nook</a> &middot; maps &middot; <a href="/news">news</a> &middot; <a href="/tools">tools</a></p>
     <form action="/maps" method="get" class="mapsearch">
       <input type="search" name="q" value="{{ q }}" placeholder="search for a place" aria-label="find a place"{% if not q %} autofocus{% endif %}>
+      <input type="hidden" name="near" value="">
     </form>
+    {% if near and places %}<p class="note">closest first, using your location for this search only. <a href="/maps?q={{ q | urlencode }}&amp;near=off">search everywhere instead</a></p>{% endif %}
 
     {% if q and not places %}
       <p class="empty">{% if failed %}the place search isn't answering just now. try again in a moment.{% else %}no place called &ldquo;{{ q }}&rdquo;. try a city, or a street and a city.{% endif %}</p>
@@ -16,7 +18,7 @@
     {% if places %}
     <ol class="found">
       {% for p in places %}
-      <li{% if loop.index0 == picked %} class="on"{% endif %}><a href="/maps?q={{ q | urlencode }}&amp;i={{ loop.index0 }}" data-lat="{{ p.lat }}" data-lon="{{ p.lon }}" data-zoom="{{ p.zoom }}"><span class="name">{{ p.name }}{% if p.kind %} <span class="soft">{{ p.kind }}</span>{% endif %}</span>{% if p.where %}<span class="where">{{ p.where }}</span>{% endif %}</a></li>
+      <li{% if loop.index0 == picked %} class="on"{% endif %}><a href="/maps?q={{ q | urlencode }}&amp;i={{ loop.index0 }}{{ keep }}" data-lat="{{ p.lat }}" data-lon="{{ p.lon }}" data-zoom="{{ p.zoom }}"><span class="name">{{ p.name }}{% if p.kind %} <span class="soft">{{ p.kind }}</span>{% endif %}{% if p.km is defined %} <span class="soft">&middot; {{ "%.1f"|format(p.km) }} km</span>{% endif %}</span>{% if p.where %}<span class="where">{{ p.where }}</span>{% endif %}</a></li>
       {% endfor %}
     </ol>
     <p class="note"><a href="{{ places[picked].osm }}" rel="noreferrer">open on openstreetmap.org</a></p>
@@ -29,4 +31,5 @@
   {{ nmap(lat, lon, zoom, markers, big=True) }}
 </div>
 {% if places %}<script src="{{ url_for('static', filename='maps.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', filename='mapsnear.js') }}"></script>
 {% endblock %}

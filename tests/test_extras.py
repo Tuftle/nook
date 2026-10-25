@@ -374,3 +374,42 @@ def test_glyphs_accept_an_encoded_font_name(monkeypatch):
     client = nook.app.test_client()
     assert client.get("/glyphs/Noto%2520Sans%2520Regular/0-255.pbf").status_code == 200
     assert seen == [("Noto Sans Regular", "0-255")]
+
+
+def test_maps_search_puts_the_closest_place_first(monkeypatch):
+    import maps
+    data = [
+        {"lat": "52.52", "lon": "13.40", "display_name": "Cafe, Berlin", "type": "cafe", "boundingbox": ["52.5", "52.6", "13.3", "13.5"]},
+        {"lat": "50.74", "lon": "7.10", "display_name": "Cafe, Bonn", "type": "cafe", "boundingbox": ["50.7", "50.8", "7.0", "7.2"]},
+    ]
+
+    class Reply:
+        def raise_for_status(self): pass
+        def json(self): return data
+
+    asked = {}
+    monkeypatch.setattr(maps.httpx, "get", lambda url, **kw: asked.update(kw["params"]) or Reply())
+    maps._places.clear()
+    found = maps.search("cafe", "en", (50.7312, 7.0987))
+    assert [p["where"] for p in found] == ["Bonn", "Berlin"]
+    assert found[0]["km"] < 5 < found[1]["km"]
+    assert "viewbox" in asked and asked["bounded"] == 1
+
+
+def test_maps_page_reads_a_near_position(monkeypatch):
+    seen = []
+    monkeypatch.setattr(nook.maps, "search", lambda q, lang, near=None: seen.append(near) or [])
+    client = nook.app.test_client()
+    client.get("/maps?q=aldi&near=50.73,7.10")
+    client.get("/maps?q=aldi&near=off")
+    client.get("/maps?q=aldi&near=999,1")
+    assert seen == [(50.73, 7.1), None, None]
+
+
+def test_maps_search_for_a_kind_of_place_uses_the_closest_ones(monkeypatch):
+    found = [{"name": "Apotheke Mitte", "address": "Markt 1", "town": "Bonn", "kind": "pharmacy", "lat": 50.73, "lon": 7.10,
+              "distance": 420.0}]
+    monkeypatch.setattr(nook.nearby, "find", lambda category, where=None, ll=None: (found, ll, None))
+    monkeypatch.setattr(nook.maps, "search", lambda *a, **k: [])
+    html = nook.app.test_client().get("/maps?q=pharmacy&near=50.73,7.10").get_data(as_text=True)
+    assert "Apotheke Mitte" in html and "0.4 km" in html and "closest first" in html

@@ -74,7 +74,7 @@ def zoom_from_box(box):
     return max(3, min(17, int(math.log2(360 / span)) + 1))   # about two tiles across the page
 
 
-def parse(data):
+def parse(data, limit=6):
     """Nominatim's answer -> a short list of places a map can show."""
     out = []
     for item in data if isinstance(data, list) else []:
@@ -90,7 +90,7 @@ def parse(data):
         out.append({"name": head, "where": rest[:110], "kind": kind, "lat": lat, "lon": lon,
                     "zoom": zoom_from_box(item.get("boundingbox")),
                     "osm": f"https://www.openstreetmap.org/?mlat={lat:.5f}&mlon={lon:.5f}#map={zoom_from_box(item.get('boundingbox'))}/{lat:.5f}/{lon:.5f}"})
-    return out[:6]
+    return out[:limit]
 
 
 _raw = {}   # (endpoint, params) -> (when, answer)
@@ -117,21 +117,46 @@ def nominatim(endpoint, params):
     return data
 
 
-def search(query, language="en"):
-    """Places called `query`, remembered for an hour. Raises httpx.HTTPError when OpenStreetMap is unreachable."""
-    key = (re.sub(r"\s+", " ", query.strip().lower()), language)
+def km_between(a, b):
+    """Straight-line distance in km between two (lat, lon) points."""
+    (la1, lo1), (la2, lo2) = (math.radians(a[0]), math.radians(a[1])), (math.radians(b[0]), math.radians(b[1]))
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    return 6371 * 2 * math.asin(math.sqrt(h))
+
+
+def search(query, language="en", near=None):
+    """Places called `query`, remembered for an hour. With `near` (lat, lon) the ones closest to that point come
+    first, each with its distance in km. Raises httpx.HTTPError when OpenStreetMap is unreachable."""
+    if near is not None:
+        near = (round(near[0], 2), round(near[1], 2))     # about a kilometre: all nook needs, and it is not kept
+    key = (re.sub(r"\s+", " ", query.strip().lower()), language, near)
     hit = _places.get(key)
     if hit and time.monotonic() - hit[0] < KEEP_PLACES:
         return hit[1]
-    with _gate:  # Nominatim's rule: at most one question a second
-        wait = 1.05 - (time.monotonic() - _last[0])
-        if wait > 0:
-            time.sleep(wait)
-        _last[0] = time.monotonic()
-        r = httpx.get(SEARCH_URL, params={"q": query, "format": "jsonv2", "limit": 6, "accept-language": language},
-                      headers=headers(), timeout=8)
-    r.raise_for_status()
-    found = parse(r.json())
+    base = {"q": query, "format": "jsonv2", "limit": 6, "accept-language": language}
+
+    def ask(extra):
+        with _gate:  # Nominatim's rule: at most one question a second
+            wait = 1.05 - (time.monotonic() - _last[0])
+            if wait > 0:
+                time.sleep(wait)
+            _last[0] = time.monotonic()
+            r = httpx.get(SEARCH_URL, params={**base, **extra}, headers=headers(), timeout=8)
+        r.raise_for_status()
+        return parse(r.json(), limit=12)
+
+    if near is None:
+        found = ask({})[:6]
+    else:
+        la, lo = near
+        box = lambda d: f"{lo - d:.4f},{la + d:.4f},{lo + d:.4f},{la - d:.4f}"
+        # first what is within about 9 km, then 30 km, which is what "closest" means to most people; if nothing is
+        # there, the same search with a wider, softer preference (it favours the area but does not exclude the rest)
+        found = (ask({"limit": 12, "viewbox": box(.08), "bounded": 1}) or ask({"limit": 12, "viewbox": box(.3), "bounded": 1})
+                 or ask({"limit": 12, "viewbox": box(.7), "bounded": 0}))
+        for place in found:
+            place["km"] = km_between(near, (place["lat"], place["lon"]))
+        found = sorted(found, key=lambda p: p["km"])[:6]
     if len(_places) > 200:
         _places.clear()
     _places[key] = (time.monotonic(), found)

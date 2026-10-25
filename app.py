@@ -611,23 +611,43 @@ def _float(name, low, high):
     return value if low <= value <= high else None
 
 
+def _near(text):
+    """"lat,lon" from the maps page -> (lat, lon) when it is a real position, else None."""
+    try:
+        la, lo = (float(v) for v in text.split(",")[:2])
+    except ValueError:
+        return None
+    return (la, lo) if -85 <= la <= 85 and -180 <= lo <= 180 else None
+
+
 @app.get("/maps")
 def maps_page():
     q = request.args.get("q", "").strip()[:120]
     if too_busy(request.remote_addr):
         abort(429)
+    near = _near(request.args.get("near", ""))
     places, failed, picked = [], False, 0
     if q:
         try:
-            places = maps.search(q, wiki.lang_for(chosen_region()))
+            kind = nearby._category(q) if near else None
+            if kind:                                    # "pharmacy", "cafe": the closest ones of that kind
+                found = nearby.find(kind, None, near)[0]
+                places = [{"name": p["name"], "where": p["address"] or p["town"] or "", "kind": p["kind"], "lat": p["lat"],
+                           "lon": p["lon"], "zoom": 16, "km": (p["distance"] or 0) / 1000,
+                           "osm": f"https://www.openstreetmap.org/?mlat={p['lat']:.5f}&mlon={p['lon']:.5f}#map=17/{p['lat']:.5f}/{p['lon']:.5f}"}
+                          for p in found[:6]]
+            if not places:                              # a name ("aldi"), or a place: the closest one by that name
+                places = (maps.search(q, wiki.lang_for(chosen_region()), near) if near
+                          else maps.search(q, wiki.lang_for(chosen_region())))
         except (httpx.HTTPError, ValueError):
             failed = True
         try:
             picked = min(max(int(request.args.get("i", 0)), 0), max(len(places) - 1, 0))
         except ValueError:
             picked = 0
+    keep = f"&near={near[0]:.2f},{near[1]:.2f}" if near else ""
     markers = [{"lat": p["lat"], "lon": p["lon"], "label": p["name"], "on": n == picked,
-                "href": f"/maps?q={quote(q)}&i={n}"} for n, p in enumerate(places)]
+                "href": f"/maps?q={quote(q)}&i={n}{keep}"} for n, p in enumerate(places)]
     lat, lon, zoom, name = _float("lat", -85, 85), _float("lon", -180, 180), _float("z", 2, 18),         request.args.get("name", "")[:80]
     if places:
         lat, lon, zoom = places[picked]["lat"], places[picked]["lon"], places[picked]["zoom"]
@@ -637,7 +657,8 @@ def maps_page():
     else:
         lat, lon, zoom = 25.0, 10.0, 2
     return render_template("maps.html", q=q, places=places, picked=picked, failed=failed, markers=markers,
-                           lat=lat, lon=lon, zoom=zoom, name=name)
+                           lat=lat, lon=lon, zoom=zoom, name=name, near=near, keep=keep,
+                           asked_off=request.args.get("near") == "off")
 
 
 @app.get("/mapstyle/<theme>.json")

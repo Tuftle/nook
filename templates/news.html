@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}news - nook{% endblock %}
+{% block body %}
+<p class="bar news-bar"><a href="/">nook</a> <span>news</span></p>
+<nav class="tabs" aria-label="wing">
+  {% for w in wings %}
+    {% if w == wing %}<span>{{ w | replace("-", " ") }}</span>{% else %}<a href="/news?w={{ w }}&amp;p={{ 1 if pics else 0 }}{% if q %}&amp;q={{ q | urlencode }}{% endif %}">{{ w | replace("-", " ") }}</a>{% endif %}
+  {% endfor %}
+</nav>
+{% if wing == "mine" %}
+<form class="newsbar addfeed" action="/feeds" method="post">
+  <input type="hidden" name="act" value="add">
+  <input type="url" name="url" placeholder="add a feed: a blog, a subreddit's .rss, a channel feed" aria-label="feed address" required>
+  <button type="submit">add</button>
+</form>
+{% if feed_error %}<p class="note">{{ feed_error }}</p>{% endif %}
+{% for u in my_urls %}
+<form class="myfeed" action="/feeds" method="post"><input type="hidden" name="act" value="remove"><input type="hidden" name="url" value="{{ u }}"><span class="soft">{{ u }}</span> <button type="submit">remove</button></form>
+{% endfor %}
+{% else %}
+<form class="newsbar" action="/news" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="search the news" aria-label="search the news">
+  <input type="hidden" name="w" value="{{ wing }}"><input type="hidden" name="p" value="{{ 1 if pics else 0 }}">
+</form>
+{% endif %}
+<p class="note toggle">
+  {% if pics %}<a href="/news?w={{ wing }}&amp;p=0{% if q %}&amp;q={{ q | urlencode }}{% endif %}">text only</a> &middot; <span>with pictures</span>
+  {% else %}<span>text only</span> &middot; <a href="/news?w={{ wing }}&amp;p=1{% if q %}&amp;q={{ q | urlencode }}{% endif %}">with pictures</a>{% endif %}
+  {% if q %}&middot; {{ stories | length }} match{{ "es" if stories | length != 1 }} for &ldquo;{{ q }}&rdquo; &middot; <a href="/news?w={{ wing }}&amp;p={{ 1 if pics else 0 }}">clear</a>{% endif %}
+</p>
+<p class="note newcount" hidden></p>
+
+{% for s in stories %}
+<article class="story{% if pics and s.image %} withpic{% endif %}"{% if s.when %} data-when="{{ s.when.isoformat() }}"{% endif %}>
+  <div class="body">
+    <h2><a href="{{ rd(s.url, wing) }}">{{ s.title }}</a></h2>
+    <div class="via">{{ s.source }}{% if wing == "all" %} &middot; {{ s.wing | replace("-", " ") }}{% endif %}{% if s.when %} &middot; {{ s.when | ago }}{% endif %}</div>
+    {% if s.summary %}<p>{{ s.summary }}</p>{% endif %}
+    {% if s.also %}<div class="also">also told by
+      {% for t in s.also %}<a href="{{ rd(t.url, wing) }}">{{ t.source }}</a> <span>({{ t.wing | replace("-", " ") }})</span>{{ ", " if not loop.last }}{% endfor %}
+      &middot; <a class="cmp" href="{{ compare(s.url, wing) }}">compare</a>
+    </div>{% endif %}
+  </div>
+  {% if pics and s.image %}<a class="pic" href="{{ rd(s.url, wing) }}" tabindex="-1"><img src="{{ px(s.image) }}" alt="" loading="lazy"></a>{% endif %}
+</article>
+{% else %}
+<p class="note">{% if wing == "mine" and not my_urls %}your own feeds show up here: a blog, a subreddit's .rss address, a youtube channel's feed. they stay in this browser.{% elif q %}nothing in the feeds mentions that.{% else %}nothing came back.{% endif %}</p>
+{% endfor %}
+
+{% if failed %}<p class="note">{{ failed | join(", ") }} didn't answer.</p>{% endif %}
+{% if wing == "mine" %}<p class="note">feeds you added. nook fetches them for you; only public addresses work.</p>{% else %}<p class="note">from {{ sources | join(", ") }}. which wing an outlet sits in is a rough reading of public media-bias ratings, not a fact. it lives in feeds.toml, so change it if you disagree.</p>{% endif %}
+<script src="{{ url_for('static', filename='news.js') }}"></script>
+{% endblock %}

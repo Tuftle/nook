@@ -366,3 +366,11 @@ def test_card_line_shapes():
 def test_card_line_for_a_fact_reads_as_the_answer():
     line = nook.card_line({"kind": "facts", "title": "Peru", "big": ("capital", "Lima"), "rows": []})
     assert line == ("Lima", "Peru, capital")
+
+
+def test_glyphs_accept_an_encoded_font_name(monkeypatch):
+    seen = []
+    monkeypatch.setattr(nook.vtiles, "font", lambda stack, rng: seen.append((stack, rng)) or b"x")
+    client = nook.app.test_client()
+    assert client.get("/glyphs/Noto%2520Sans%2520Regular/0-255.pbf").status_code == 200
+    assert seen == [("Noto Sans Regular", "0-255")]

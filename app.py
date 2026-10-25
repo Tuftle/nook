@@ -665,6 +665,7 @@ def vector_tile(z, x, y):
 
 @app.get("/glyphs/<stack>/<rng>")
 def map_glyphs(stack, rng):
+    stack = unquote(stack)          # some hosts hand the path over still encoded ("Noto%20Sans%20Regular")
     try:
         body = vtiles.font(stack, rng.removesuffix(".pbf"))
     except ValueError:

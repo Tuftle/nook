@@ -336,6 +336,12 @@
         });
       }
       if (window.ResizeObserver) new ResizeObserver(function () { map.resize(); }).observe(el);
+      // the page can still be laying itself out when the map is made, which left the first picture blank
+      // (the map was drawn at the wrong size and never asked again). Measure again once it has loaded.
+      var fit = function () { map.resize(); map.triggerRepaint(); };
+      map.once("load", fit);
+      requestAnimationFrame(function () { requestAnimationFrame(fit); });
+      window.addEventListener("load", fit, { once: true });
     }).catch(function () { el.dataset.ready = ""; el.classList.remove("vector"); init(el); });
   }
 
